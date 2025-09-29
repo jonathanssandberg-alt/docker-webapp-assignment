@@ -1,0 +1,57 @@
+name: Build and Deploy to Azure
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/docker-webapp:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/docker-webapp:${{ github.sha }}
+    
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Deploy to Azure Container Instance
+      run: |
+        az container create \
+          --resource-group docker-webapp-rg \
+          --name docker-webapp-container \
+          --image ${{ secrets.DOCKERHUB_USERNAME }}/docker-webapp:latest \
+          --dns-name-label dns-jonathan001023 \
+          --ports 3000 \
+          --os-type Linux \
+          --cpu 1 \
+          --memory 1 \
+          --registry-login-server index.docker.io \
+          --registry-username ${{ secrets.DOCKERHUB_USERNAME }} \
+          --registry-password ${{ secrets.DOCKERHUB_TOKEN }} \
+          --no-wait || \
+        az container restart \
+          --resource-group docker-webapp-rg \
+          --name docker-webapp-container
